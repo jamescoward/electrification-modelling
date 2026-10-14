@@ -93,10 +93,13 @@ export interface OilDelivery {
 }
 export interface MonthlyProfile {
   month: number;
-  importKWh: number;
-  exportKWh: number;
-  cheapFraction: number;
+  importKWh: number | null;
+  exportKWh: number | null;
+  cheapFraction: number | null;
   provenance: Provenance;
+  importProvenance?: Provenance;
+  exportProvenance?: Provenance;
+  notes?: string[];
 }
 export interface MeterSelection {
   mpan: string;
@@ -169,6 +172,7 @@ export interface Project {
     referenceStart: DateOnly | null;
     referenceEnd: DateOnly | null;
     referenceConfirmed: boolean;
+    exportRepresentativeFrom?: DateOnly | null;
     profile: MonthlyProfile[];
   };
   overrides: BillOverride[];

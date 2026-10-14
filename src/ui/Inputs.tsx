@@ -569,9 +569,10 @@ export function Inputs({
               />
             </div>
             <p className="small muted" style={{ marginTop: 16 }}>
-              Enter the imported/exported kWh profile, not historic pound totals. Missing months
-              remain missing until you enter them. These reference values already contain solar,
-              battery and EV operation.
+              Use Data & backup → Preview available reference readings to fill this table from
+              Octopus. Enter the imported/exported kWh profile, not historic pound totals. Missing
+              months remain missing until you enter them. These reference values already contain
+              solar, battery and EV operation.
             </p>
             <div className="table-wrap">
               <table>
@@ -608,14 +609,33 @@ export function Inputs({
               <input
                 type="checkbox"
                 checked={p.forecast.referenceConfirmed}
+                disabled={
+                  p.forecast.profile.length !== 12 ||
+                  p.forecast.profile.some(
+                    (row) =>
+                      row.importKWh === null ||
+                      row.exportKWh === null ||
+                      row.cheapFraction === null,
+                  )
+                }
                 onChange={(e) => f({ referenceConfirmed: e.target.checked })}
               />
               I confirm all twelve months form a complete pre-heat-pump seasonal profile; any
               estimates are explicitly labelled.
             </label>
-            {p.forecast.profile.length < 12 && (
+            {p.forecast.profile.filter(
+              (row) =>
+                row.importKWh !== null && row.exportKWh !== null && row.cheapFraction !== null,
+            ).length < 12 && (
               <p className="small negative">
-                {12 - p.forecast.profile.length} reference months still need values.
+                {12 -
+                  p.forecast.profile.filter(
+                    (row) =>
+                      row.importKWh !== null &&
+                      row.exportKWh !== null &&
+                      row.cheapFraction !== null,
+                  ).length}{' '}
+                reference months still need values.
               </p>
             )}
           </Card>
@@ -651,18 +671,26 @@ function ProfileRow({
   onApply: (row: MonthlyProfile) => void;
 }) {
   const [draft, setDraft] = useState({
-    importKWh: record ? String(record.importKWh) : '',
-    exportKWh: record ? String(record.exportKWh) : '',
-    cheap: record ? String(record.cheapFraction * 100) : '',
-    provenance: record?.provenance ?? 'entered',
+    importKWh: record?.importKWh == null ? '' : String(record.importKWh),
+    exportKWh: record?.exportKWh == null ? '' : String(record.exportKWh),
+    cheap: record?.cheapFraction == null ? '' : String(record.cheapFraction * 100),
+    provenance:
+      record &&
+      (record.importKWh === null || record.exportKWh === null || record.cheapFraction === null)
+        ? 'estimated'
+        : (record?.provenance ?? 'entered'),
   });
   useEffect(
     () =>
       setDraft({
-        importKWh: record ? String(record.importKWh) : '',
-        exportKWh: record ? String(record.exportKWh) : '',
-        cheap: record ? String(record.cheapFraction * 100) : '',
-        provenance: record?.provenance ?? 'entered',
+        importKWh: record?.importKWh == null ? '' : String(record.importKWh),
+        exportKWh: record?.exportKWh == null ? '' : String(record.exportKWh),
+        cheap: record?.cheapFraction == null ? '' : String(record.cheapFraction * 100),
+        provenance:
+          record &&
+          (record.importKWh === null || record.exportKWh === null || record.cheapFraction === null)
+            ? 'estimated'
+            : (record?.provenance ?? 'entered'),
       }),
     [record],
   );
@@ -679,28 +707,59 @@ function ProfileRow({
     !record ||
     Number(draft.importKWh) !== record.importKWh ||
     Number(draft.exportKWh) !== record.exportKWh ||
-    Number(draft.cheap) / 100 !== record.cheapFraction ||
+    record.cheapFraction === null ||
+    Math.abs(Number(draft.cheap) / 100 - record.cheapFraction) > 1e-12 ||
     draft.provenance !== record.provenance;
   return (
     <tr>
       <td>
         {m}
-        <div className="small muted">{record ? 'Applied' : 'Missing'}</div>
+        {record?.notes?.map((note) => (
+          <div className="small muted" key={note}>
+            {note}
+          </div>
+        ))}
+        <div className="small muted">
+          {record &&
+          record.importKWh !== null &&
+          record.exportKWh !== null &&
+          record.cheapFraction !== null
+            ? 'Applied'
+            : 'Values needed'}
+        </div>
       </td>
       <td>
+        {record?.importProvenance && (
+          <div className="small muted">Source: {record.importProvenance}</div>
+        )}
         <Field
           label={m + ' imported kWh'}
           value={draft.importKWh}
           min={0}
-          onChange={(v) => setDraft({ ...draft, importKWh: v })}
+          onChange={(v) =>
+            setDraft({
+              ...draft,
+              importKWh: v,
+              provenance: draft.provenance === 'api-derived' ? 'estimated' : draft.provenance,
+            })
+          }
         />
       </td>
       <td>
+        {record?.exportProvenance && (
+          <div className="small muted">Source: {record.exportProvenance}</div>
+        )}
         <Field
           label={m + ' exported kWh'}
           value={draft.exportKWh}
           min={0}
-          onChange={(v) => setDraft({ ...draft, exportKWh: v })}
+          onChange={(v) =>
+            setDraft({
+              ...draft,
+              exportKWh: v,
+              provenance: draft.provenance === 'api-derived' ? 'estimated' : draft.provenance,
+            })
+          }
         />
       </td>
       <td>
@@ -709,7 +768,13 @@ function ProfileRow({
           value={draft.cheap}
           min={0}
           max={100}
-          onChange={(v) => setDraft({ ...draft, cheap: v })}
+          onChange={(v) =>
+            setDraft({
+              ...draft,
+              cheap: v,
+              provenance: draft.provenance === 'api-derived' ? 'estimated' : draft.provenance,
+            })
+          }
         />
       </td>
       <td>
@@ -733,6 +798,17 @@ function ProfileRow({
               exportKWh: Number(draft.exportKWh),
               cheapFraction: Number(draft.cheap) / 100,
               provenance: draft.provenance,
+              importProvenance:
+                record?.importKWh === Number(draft.importKWh) &&
+                record?.cheapFraction != null &&
+                Math.abs(record.cheapFraction - Number(draft.cheap) / 100) < 1e-12
+                  ? (record.importProvenance ?? record.provenance)
+                  : draft.provenance,
+              exportProvenance:
+                record?.exportKWh === Number(draft.exportKWh)
+                  ? (record.exportProvenance ?? record.provenance)
+                  : draft.provenance,
+              notes: record?.notes,
             })
           }
         >

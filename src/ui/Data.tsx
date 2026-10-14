@@ -9,8 +9,18 @@ import { readApiKey, saveApiKey, forgetApiKey } from '../adapters/credentials';
 import { OctopusClient, type DiscoveredAccount } from '../adapters/octopus';
 import { parseBackup, exportBackup } from '../adapters/backup';
 import { MODEL_VERSION } from '../application/result';
-import { buildBaseline, buildReferenceProfile } from '../application/sourceProfile';
-import { Card, Field, Modal, Notice, Empty, number, currency } from './components';
+import { buildBaseline, buildAvailableReferenceProfile } from '../application/sourceProfile';
+import {
+  Card,
+  Field,
+  Modal,
+  Notice,
+  Empty,
+  number,
+  currency,
+  DateField,
+  months,
+} from './components';
 import { errorText, type Update } from './EntityEditors';
 const client = new OctopusClient();
 export function Data({
@@ -388,8 +398,25 @@ export function Data({
         <p className="small muted">
           Choose reference dates in Inputs first. A baseline uses complete occupied pre-upgrade
           days. The forecast profile requires one complete seasonal year after solar/EV adoption and
-          before heat-pump commissioning.
+          before heat-pump commissioning. Octopus readings will fill every complete month it can
+          verify, including imported kWh and the proportion imported during your selected standard
+          cheap hours. Missing exports stay blank; no seasonal extrapolation is applied.
         </p>
+        <DateField
+          label="Representative export setup from (optional)"
+          value={p.forecast.exportRepresentativeFrom ?? null}
+          help="Exclude readings before your export limit and setup settled. This affects the forecast reference only; historical costs are unchanged."
+          onChange={(value) =>
+            onChange({
+              ...p,
+              forecast: {
+                ...p.forecast,
+                exportRepresentativeFrom: value,
+                referenceConfirmed: false,
+              },
+            })
+          }
+        />
         <div className="actions">
           <button
             className="button secondary"
@@ -438,14 +465,14 @@ export function Data({
                   throw new Error('Reference must end before heat-pump commissioning.');
                 if ((solar && start < solar) || (ev && start < ev))
                   throw new Error('Reference must begin after solar and EV adoption.');
-                setProfilePreview(buildReferenceProfile(p.cache, start, end, p.forecast));
+                setProfilePreview(buildAvailableReferenceProfile(p.cache, start, end, p.forecast));
                 setError('');
               } catch (e) {
                 setError(errorText(e));
               }
             }}
           >
-            Preview measured reference year
+            Preview available reference readings
           </button>
         </div>
       </Card>
@@ -730,31 +757,52 @@ export function Data({
         </Modal>
       )}
       {profilePreview && (
-        <Modal title="Review measured reference year" onClose={() => setProfilePreview(null)}>
+        <Modal title="Review available reference readings" onClose={() => setProfilePreview(null)}>
           <p className="small muted">
-            Confirm replaces the twelve-month reference with source-derived kWh. Future prices and
-            manual facts remain unchanged.
+            Applying replaces the selected monthly reference values with available Octopus readings.
+            Missing components stay blank and prevent a complete forecast until you supply
+            explicitly labelled estimates or more readings. Prices, historical bills and source
+            cache are unchanged.
           </p>
-          <div className="row">
-            <span>Reference import</span>
-            <strong>
-              {number(
-                profilePreview.reduce((s, x) => s + x.importKWh, 0),
-                1,
-              )}{' '}
-              kWh
-            </strong>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th>Imported kWh</th>
+                  <th>Exported kWh</th>
+                  <th>Cheap import %</th>
+                  <th>Coverage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {profilePreview.map((row) => (
+                  <tr key={row.month}>
+                    <td>{months[row.month - 1]}</td>
+                    <td>{number(row.importKWh, 1)}</td>
+                    <td>{number(row.exportKWh, 1)}</td>
+                    <td>
+                      {number(row.cheapFraction === null ? null : row.cheapFraction * 100, 1)}
+                    </td>
+                    <td>
+                      {row.importKWh === null || row.exportKWh === null
+                        ? 'Incomplete — values needed'
+                        : 'Complete readings'}
+                      {row.notes?.map((note) => (
+                        <div className="small muted" key={note}>
+                          {note}
+                        </div>
+                      ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div className="row">
-            <span>Reference export</span>
-            <strong>
-              {number(
-                profilePreview.reduce((s, x) => s + x.exportKWh, 0),
-                1,
-              )}{' '}
-              kWh
-            </strong>
-          </div>
+          <p className="small muted">
+            Cheap import percentage is imported kWh inside your selected standard tariff window
+            divided by total imported kWh. Extra Intelligent Go charging slots are not inferred.
+          </p>
           <div className="actions">
             <button className="button secondary" onClick={() => setProfilePreview(null)}>
               Cancel
@@ -762,14 +810,27 @@ export function Data({
             <button
               className="button"
               onClick={() => {
+                const complete = profilePreview.every(
+                  (row) =>
+                    row.importKWh !== null && row.exportKWh !== null && row.cheapFraction !== null,
+                );
                 onChange({
                   ...p,
-                  forecast: { ...p.forecast, profile: profilePreview, referenceConfirmed: true },
+                  forecast: {
+                    ...p.forecast,
+                    profile: profilePreview,
+                    referenceConfirmed: complete,
+                  },
                 });
+                setMessage(
+                  complete
+                    ? 'Complete reference readings applied.'
+                    : 'Available readings applied. In Inputs → Forecast, fill only the blank components and label any estimates before confirming the year.',
+                );
                 setProfilePreview(null);
               }}
             >
-              Confirm measured reference
+              Apply available readings
             </button>
           </div>
         </Modal>
