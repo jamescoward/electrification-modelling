@@ -533,3 +533,87 @@ test('a corrupt saved schema can recover the valid pre-import snapshot', async (
   expect((await stored(page, 'household'))?.schemaVersion).toBe(1);
   await expect(page.locator('.topbar').getByRole('status')).toHaveText('Saved on this browser');
 });
+
+test('available reference readings fill cheap import percentages despite missing representative exports', async ({
+  page,
+}) => {
+  await demo(page);
+  const before = (await stored(page, 'demo'))!;
+  const original = projectModel(before);
+  await nav(page, 'Data & backup');
+  await page
+    .getByLabel('Representative export setup from (optional)', { exact: false })
+    .fill('2025-12-01');
+  await expect
+    .poll(async () => (await stored(page, 'demo'))?.forecast.exportRepresentativeFrom)
+    .toBe('2025-12-01');
+  await page
+    .getByRole('button', { name: 'Preview available reference readings', exact: true })
+    .click();
+  const preview = page.getByRole('dialog', {
+    name: 'Review available reference readings',
+    exact: true,
+  });
+  await expect(preview).toBeVisible();
+  await preview.getByRole('button', { name: 'Apply available readings', exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await stored(page, 'demo'))?.forecast.profile.filter((row) => row.exportKWh === null)
+          .length,
+    )
+    .toBe(3);
+  const partial = (await stored(page, 'demo'))!;
+  expect(partial.cache).toEqual(before.cache);
+  expect(partial.overrides).toEqual(before.overrides);
+  expect(partial.forecast.referenceConfirmed).toBe(false);
+  expect(projectModel(partial).historicalSavings).toBe(original.historicalSavings);
+  expect(projectModel(partial).nextYearSavings).toBeNull();
+  await nav(page, 'Inputs');
+  await nav(page, 'Forecast');
+  expect(
+    Number(await page.getByLabel('Sep imported kWh', { exact: true }).inputValue()),
+  ).toBeCloseTo(380, 9);
+  expect(
+    Number(await page.getByLabel('Sep cheap import %', { exact: true }).inputValue()),
+  ).toBeCloseTo(68, 9);
+  await expect(page.getByLabel('Sep exported kWh', { exact: true })).toHaveValue('');
+  const confirmation = page.getByRole('checkbox', { name: /I confirm all twelve months/ });
+  await expect(confirmation).toBeDisabled();
+  for (const [month, amount] of [
+    ['Sep', '50'],
+    ['Oct', '60'],
+    ['Nov', '40'],
+  ]) {
+    await page.getByLabel(`${month} exported kWh`, { exact: true }).fill(amount);
+    await page.getByRole('button', { name: `Apply ${month} values`, exact: true }).click();
+    await expect
+      .poll(
+        async () =>
+          (await stored(page, 'demo'))?.forecast.profile.find(
+            (row) => row.month === ({ Sep: 9, Oct: 10, Nov: 11 } as Record<string, number>)[month],
+          )?.exportKWh,
+      )
+      .toBe(Number(amount));
+  }
+  await expect(confirmation).toBeEnabled();
+  await confirmation.check();
+  await expect
+    .poll(async () => (await stored(page, 'demo'))?.forecast.referenceConfirmed)
+    .toBe(true);
+  const complete = (await stored(page, 'demo'))!;
+  expect(complete.forecast.profile.find((row) => row.month === 9)?.importProvenance).toBe(
+    'api-derived',
+  );
+  expect(complete.forecast.profile.find((row) => row.month === 9)?.exportProvenance).toBe(
+    'estimated',
+  );
+  expect(projectModel(complete).nextYearSavings).not.toBeNull();
+  expect(projectModel(complete).historicalSavings).toBe(original.historicalSavings);
+  await page.reload();
+  await nav(page, 'Forecast');
+  await expect(page.getByLabel('Sep exported kWh', { exact: true })).toHaveValue('50');
+  expect(
+    Number(await page.getByLabel('Sep cheap import %', { exact: true }).inputValue()),
+  ).toBeCloseTo(68, 9);
+});

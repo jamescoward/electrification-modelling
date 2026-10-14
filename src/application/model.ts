@@ -116,7 +116,17 @@ export function projectModel(
     f.referenceConfirmed &&
     refDatesValid &&
     f.profile.length === 12 &&
+    f.profile.every(
+      (r) => r.importKWh !== null && r.exportKWh !== null && r.cheapFraction !== null,
+    ) &&
     new Set(f.profile.map((x) => x.month)).size === 12;
+  const incompleteMonths = f.profile.filter(
+    (r) => r.importKWh === null || r.exportKWh === null || r.cheapFraction === null,
+  );
+  if (incompleteMonths.length)
+    result.missing.push(
+      `Reference readings or explicit estimates still needed for ${incompleteMonths.map((r) => new Intl.DateTimeFormat('en-GB', { month: 'short', timeZone: 'UTC' }).format(new Date(Date.UTC(2024, r.month - 1, 1)))).join(', ')}. Missing exports are not zero.`,
+    );
   if (!refValid)
     result.missing.push(
       'Confirm a full seasonal pre-heat-pump reference profile (explicit estimates are allowed).',
@@ -296,15 +306,15 @@ export function projectModel(
       } else if (forecastReady) {
         const profile = f.profile.find((x) => x.month === cursor.month)!;
         const fraction = days / cursor.daysInMonth;
-        cost = D(profile.importKWh)
+        cost = D(profile.importKWh!)
           .times(fraction)
           .times(
             D(f.importCheapPence!)
-              .times(profile.cheapFraction)
-              .plus(D(f.importDayPence!).times(1 - profile.cheapFraction)),
+              .times(profile.cheapFraction!)
+              .plus(D(f.importDayPence!).times(1 - profile.cheapFraction!)),
           )
           .div(100)
-          .minus(D(profile.exportKWh).times(fraction).times(f.exportPence!).div(100))
+          .minus(D(profile.exportKWh!).times(fraction).times(f.exportPence!).div(100))
           .plus(D(days).times(f.standingPence!).div(100))
           .toNumber();
         const heatDays = overlapDays(part.start, part.end, heat);
@@ -325,7 +335,7 @@ export function projectModel(
         }
         complete = true;
         month.notes.push(
-          `Reference ${profile.provenance}; repriced import/export with unchanged solar, battery and EV conditions.`,
+          `Reference import ${profile.importProvenance ?? profile.provenance}, export ${profile.exportProvenance ?? profile.provenance}; repriced with unchanged solar, battery and EV conditions.`,
         );
       }
       const heatStart = heat && heat > part.start ? heat : part.start;

@@ -25,6 +25,10 @@ Add each fixed-rate loan separately under **Loans**, including its monthly payme
 
 For a forecast, confirm a full seasonal electricity reference profile from before the heat pump, including EV use, solar and battery. Explicit estimates are allowed and labelled. Forecast heating is extra grid consumption; measured historical whole-house electricity already includes heating and EVs. Oil sensitivity buttons adjust future assumptions; they do not rewrite purchased historical oil prices.
 
+To fill the reference from Octopus, first refresh your readings, then choose **Data & backup → Preview available reference readings**. The builder calculates imported kWh and the cheap-rate fraction from the actual interval energy in your selected standard cheap hours; it does not assume that six cheap hours means 25% of imported energy. Complete import months remain usable even when export readings are missing.
+
+If your export limit/setup changed, enter **Representative export setup from** to exclude earlier export readings from the future reference. Review and apply the preview, then fill only the blank components under **Inputs → Forecast**, explicitly labelling estimates before confirming the year. Missing or partly covered months remain blank, including a month cut by the setup date. Octopus cannot reconstruct export readings it did not record or show how an earlier period would have behaved with a different limit. This setting leaves historical readings and bill corrections unchanged; unpaid historical exports must not acquire retrospective income.
+
 In **Data & backup**, enter your Octopus account details and API key locally. Refresh is deliberate. Review discovered meters and tariff agreements before relying on their costs, and reconcile against bills where available. Intelligent Go extra discounted slots are not assumed to be handled by standard-hour reconstruction. [Integration status](docs/integration.md) records evidence and checks that still require a real account; synthetic tests do not prove authenticated browser access. A manual source-import fallback is available when direct API access fails, but it does not complete automatic account integration.
 
 ## Save, back up and recover
@@ -57,4 +61,4 @@ CI=1 npm run test:e2e
 
 The cloud workspace can use its existing `/usr/bin/chromium` with `npm run test:e2e`; set `CHROMIUM_PATH` to choose another installed Chromium. Browser tests build and serve the production app at `/electrification-modelling/` and use synthetic data only. They do not call a household's live account. See [acceptance coverage](docs/acceptance.md), [architecture](docs/architecture.md) and the original [specification](spec.md).
 
-Local validation on 14 October 2026 passed 76 model/adapter tests and 12 Chromium workflows, including browser restart, backup recovery, failed refresh/retry and the Pages subpath. The production build passed. Authenticated Octopus access and the hosted Pages origin still require the checks recorded in the integration note.
+Local validation on 14 October 2026 passed 82 model/adapter tests and 13 Chromium workflows, including browser restart, backup recovery, failed refresh/retry and the Pages subpath. The production build passed. Authenticated Octopus access and the hosted Pages origin still require the checks recorded in the integration note.
